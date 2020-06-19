@@ -5,9 +5,9 @@ class Lottery extends address {
     var manager: address
     var players: seq<address>
     constructor() 
-        ensures manager == msg.sender
+        ensures manager == this.address
 
-    predicate isManager()
+    predicate isManager(caller: address)
         ensures isManager() ==> msg.sender == manager
         {
             manager == msg.sender == manager

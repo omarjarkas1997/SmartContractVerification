@@ -11,11 +11,19 @@ class Auction extends address {
   var ended: bool
 
 
+  predicate Valid()
+    reads this
+  {
+      (forall i :: i in pendingReturns ==> this.balance >= pendingReturns[i]) && this.balance >= highestBid
+  }
 
-  constructor(biddingTime: nat, seller: address, block: Block)
+  constructor(biddingTime: nat, seller: address)
     ensures beneficiary == seller && auctionEnd == block.timestamp + biddingTime
     {
       beneficiary := seller;
+      msg := new Message();
+      block := new Block();
+      new;
       auctionEnd := block.timestamp + biddingTime;
       highestBidder := null;
       highestBid := 0;
@@ -25,27 +33,35 @@ class Auction extends address {
   
   method bid(bidder: address)
     requires block.timestamp <= auctionEnd
-    requires msg.value > highestBid
-    requires highestBidder != msg.sender
+    requires bidder.msg.value > highestBid
+    requires highestBidder != bidder
+    requires Valid()
     modifies this
+    ensures Valid()
     {
-      // if highest bid is not zero, this means that their is atleast an initial bid in the contract
-      if highestBid != 0 {
-        // before we assign the new bidder we must return the latest bid to the previous person
-        // if the bider that we want to return the money to is in the map, add the the leastest money to him in not create an element if the map and add the money to it 
-        pendingReturns := pendingReturns[highestBidder:= (if highestBidder in pendingReturns then pendingReturns[highestBidder] else 0) + highestBid];
+      if highestBidder in pendingReturns{
+            pendingReturns := pendingReturns[highestBidder:= (if highestBidder in pendingReturns then pendingReturns[highestBidder] else 0) + highestBid];
+      }else {
+        pendingReturns := pendingReturns[highestBidder := highestBid];
       }
-      // assign the new highest bidder and the new highest bid
-      highestBidder := bidder.msg.sender;
+      assert highestBidder in pendingReturns;
+      highestBidder := bidder;
       highestBid := bidder.msg.value;
+      this.balance := this.balance + highestBid;
     }
 
-    method withdraw(caller: address) returns (r: bool)
-    ensures caller.msg.sender in pendingReturns ==> pendingReturns[caller.msg.sender] == 0
-    ensures 
+    
+    method withdraw(caller: address)
+    requires Valid()
+    modifies this, caller
+    ensures caller in pendingReturns ==> pendingReturns == old(pendingReturns)[caller := 0] 
+    ensures Valid() 
       {
-        var amount := if caller.msg.sender in pendingReturns then pendingReturns[caller.msg.sender] else 0;
-
+        var amount := if caller in pendingReturns then pendingReturns[caller] else 0;
+        assert amount <= this.balance;
+        pendingReturns := pendingReturns[caller:= 0];
+        this.balance := this.balance - amount;
+        var sent := caller.send(amount);
       } 
 
 
